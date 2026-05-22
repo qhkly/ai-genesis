@@ -1,0 +1,119 @@
+name: Build AI Genesis Image
+
+on:
+  push:
+    tags:
+      - "ai-v*"
+
+jobs:
+  build-base:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: |
+            qhkly/ai-genesis-base
+            ghcr.io/${{ github.repository_owner }}/ai-genesis-base
+          tags: |
+            type=raw,value=latest
+            type=ref,event=tag
+          labels: |
+            org.opencontainers.image.description=Local base image for AI Genesis
+
+      - name: Build and push base image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.base
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build:
+    needs: build-base
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: |
+            qhkly/ai-genesis
+            ghcr.io/${{ github.repository_owner }}/ai-genesis
+          tags: |
+            type=raw,value=latest
+            type=ref,event=tag
+          labels: |
+            org.opencontainers.image.description=Persistent AI brain with memory and autonomous synthesis
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            BASE_IMAGE=qhkly/ai-genesis-base:${{ github.ref_name }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export image archive to R2
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' && secrets.R2_BUCKET_NAME != '' && secrets.R2_ENDPOINT_URL != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          docker buildx build --platform linux/amd64 --load -t ai-genesis-base:${{ github.ref_name }} -f Dockerfile.base .
+          docker buildx build --platform linux/amd64 --load -t ai-genesis:${{ github.ref_name }} --build-arg BASE_IMAGE=ai-genesis-base:${{ github.ref_name }} .
+          docker save ai-genesis:${{ github.ref_name }} | gzip > ai-genesis-${{ github.ref_name }}-amd64.tar.gz
+          aws s3 cp ai-genesis-${{ github.ref_name }}-amd64.tar.gz s3://${{ secrets.R2_BUCKET_NAME }}/releases/ai-genesis-${{ github.ref_name }}-amd64.tar.gz --endpoint-url ${{ secrets.R2_ENDPOINT_URL }}

@@ -1,0 +1,9 @@
+# AI Genesis autonomous schedule. Container-local cron is the primary scheduler.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Think every day at 03:00 container time.
+0 3 * * * ubuntu /opt/scripts/think.sh >> /tmp/think.log 2>&1
+
+# Optional R2 sync; the script exits cleanly when R2 env vars are absent.
+0 */6 * * * ubuntu /opt/scripts/sync-r2.sh push >> /tmp/sync.log 2>&1

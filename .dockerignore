@@ -1,0 +1,7 @@
+node_modules
+brain-api/node_modules
+npm-debug.log
+.brain-data
+.git
+.DS_Store
+*.tar.gz
